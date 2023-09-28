@@ -15,16 +15,14 @@ class Server:
         # Override
         return data.decode('utf-8')
     
-    def HandlePacket(self, data):
+    def HandlePacket(self, data, clientAddr):
         # Override
-        print(self.DecodePacket(data))
+        print(clientAddr, ":", self.DecodePacket(data))
 
-    def Start(self):
+    def Run(self):
         while True:
-            data, _ = self.server_socket.recvfrom(1024)
-            if not data:
-                continue
-            self.HandlePacket(data)
+            self.RecievePacket()
+            # Add other async/threaded methods here
 
     # To be implemented in async or thread
     def StartTimer(self):
@@ -44,6 +42,23 @@ class Server:
         """
         For the main server to handle console inputs
         """
+        pass
+
+    def RecievePacket(self):
+        """
+        Function to recieve a packet
+        """
+        data, clientAddr = self.server_socket.recvfrom(1024)
+        while not data:
+            data, clientAddr = self.server_socket.recvfrom(1024)
+        self.HandlePacket(data, clientAddr)
+
+    def Exit(self):
+        """
+        Gracefully shut down server. Function should be callable by any thread/async event
+        """
+        pass
+    
 
 
 class Client:
@@ -60,19 +75,22 @@ class Client:
         # Override
         self.client_socket.sendall(message.encode('utf-8'))
 
-    def HandlePacket(self, message):
+    def HandlePacket(self, message : str, isEOF : bool = False):
         # Override
         self.SendPacket(message)
 
-    def Start(self):
+    def Run(self):
         try:
             while True:
-                message = input("Enter a message to send (or type 'exit' to quit): ")
-                self.HandlePacket(message)
+                try:
+                    message = input()
+                    self.HandlePacket(message)
+                except EOFError:
+                    self.HandlePacket("", isEOF=True)
         except KeyboardInterrupt:
             pass
         finally:
-            self.client_socket.close()
+            self.Exit()
 
     # To be implemented in async or thread
     def StartTimer(self):
@@ -87,3 +105,17 @@ class Client:
         Function called when timer times out
         """
         pass
+
+    def RecievePacket(self):
+        """
+        Function to recieve a packet
+        """
+        pass
+
+    def Exit(self):
+        """
+        Call to gracefully shut down client
+        """
+        self.client_socket.close()
+
+

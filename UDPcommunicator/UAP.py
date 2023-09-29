@@ -83,7 +83,7 @@ class Message:
         headerNum += sequenceNo << UAP.SHIFTS["SEQUENCE"]
         headerNum += sessionID << UAP.SHIFTS["SESSION"]
         
-        return headerNum.to_bytes(24, 'big') + message.encode()
+        return headerNum.to_bytes(12, 'big') + message.encode()
 
     def EncodeMessage(self) -> bytes:
         return Message._EncodeMessage(self.command, self.seq, self.sID, self.message)
@@ -110,12 +110,13 @@ class Message:
 
 if __name__ == "__main__":
 
-    m = Message(1, 0, 0, "Hello world")
+    m = Message(1, 1, 1, "Hello world")
 
     print("Input Message:")
     print(m)
 
     m_enc = m.EncodeMessage()
+    print(m_enc)
 
     m_dec = Message.DecodeMessage(m_enc)
 

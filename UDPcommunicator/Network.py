@@ -62,10 +62,11 @@ class Server:
 
 
 class Client:
-    def __init__(self, host, port, timeout=5):
+    def __init__(self, host, port, recieve_port=2048, timeout=20):
         self.host = host
         self.port = port
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.client_socket.bind(('0.0.0.0', recieve_port))
         self.client_socket.connect((host, port))
         print(f"Connected to server at {host}:{port}")
 

@@ -1,6 +1,6 @@
-from Network import Server, Client
-from UAP import Message, UAP
-import random
+from Network import Server
+from UAP import UAP, Message
+
 
 class UAPServer(Server):
 
@@ -88,82 +88,3 @@ class UAPServer(Server):
         self.sessionSequenceDict = {}
 
         return self.instance.Run()
-    
-
-class UAPClient(Client):
-
-    STATES = {
-        "Hello wait"    : 0,
-        "Ready"         : 1,
-        "Ready Timer"   : 2,
-        "Closing"       : 3,
-        ""              : 4,
-    }
-
-    def __init__(self, client : Client):
-        self.instance = client
-        self.state = UAPClient.STATES["Hello wait"]
-
-        self.instance.SendPacket = self.SendPacket
-        self.instance.HandlePacket = self.HandlePacket
-        self.instance.RecievePacket = self.RecievePacket
-
-
-    def SendPacket(self, message : Message):
-        self.instance.client_socket.sendall(message.EncodeMessage())
-        self.seq += 1
-
-    def HandlePacket(self, message : str, isEOF : bool = False):
-        if isEOF:
-            self.SendPacket(Message(
-                UAP.CommandEnum.GOODBYE,
-                self.seq,
-                self.sID,
-                "EOF"
-            ))
-            while self.instance.running.is_set():
-                pass
-            return
-        if message == "q":
-            message = Message(
-                UAP.CommandEnum.GOODBYE,
-                self.seq,
-                self.sID,
-                ""
-            )
-        else:
-            message = Message(
-                UAP.CommandEnum.DATA, 
-                self.seq, 
-                self.sID, 
-                message
-            )
-        self.SendPacket(message)
-
-    def RecievePacket(self):
-        while self.instance.running.is_set():
-            data, _ = self.instance.client_socket.recvfrom(1024)
-            msg = Message.DecodeMessage(data)
-            if msg.command == UAP.CommandEnum.GOODBYE:
-                self.Exit("GOODBYE from server")
-
-    def Run(self):
-        # Session start hello
-        self.sID = random.getrandbits(32)
-        self.seq = 0
-        helloMessage = Message(UAP.CommandEnum.HELLO, self.seq, self.sID, "")
-        self.SendPacket(helloMessage)
-
-        # Wait for hello
-        while True:
-            data, _ = self.instance.client_socket.recvfrom(1024)
-            msg = Message.DecodeMessage(data)
-            if msg.sID == self.sID and msg.command == UAP.CommandEnum.HELLO:
-                self.state = UAPClient.STATES["Ready"]
-                break
-
-        self.instance.Run()
-
-    def Exit(self, reason):
-        self.instance.Exit(reason)
-        

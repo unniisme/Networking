@@ -61,7 +61,10 @@ class ThreadedClient(Client):
             message = input()
             isEOF = False
         except EOFError:
-            message = ""
+            message = "EOF"
+            isEOF = True
+        except KeyboardInterrupt:
+            message = "KeyboardInterrupt"
             isEOF = True
         if not self.running.is_set():
             return
@@ -81,8 +84,6 @@ class ThreadedClient(Client):
         try:
             while self.running.is_set():
                 self._MainLoop()
-        except KeyboardInterrupt:
-            pass
         except ConnectionRefusedError:
             self.Exit("Connection refused")
 

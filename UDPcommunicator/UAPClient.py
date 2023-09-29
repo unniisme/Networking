@@ -2,6 +2,7 @@ from Network import Client
 from UAP import Message, UAP
 import random
 import time
+import socket
 
 class UAPClient(Client):
 
@@ -56,15 +57,22 @@ class UAPClient(Client):
         self.SendPacket(message)
 
     def RecievePacket(self):
+        waitingState = False
         while self.instance.running.is_set():
-            data, _ = self.instance.client_socket.recvfrom(1024)
-            msg = Message.DecodeMessage(data)
-            if msg.command == UAP.CommandEnum.HELLO:
-                print("Recieved Hello from server")
-            if msg.command == UAP.CommandEnum.GOODBYE:
-                self.instance.Exit("GOODBYE from server")
-            if msg.command == UAP.CommandEnum.ALIVE:
-                self.TimerStart()
+            try:
+                data, _ = self.instance.client_socket.recvfrom(1024)
+                msg = Message.DecodeMessage(data)
+                if msg.command == UAP.CommandEnum.HELLO:
+                    print("Recieved Hello from server")
+                if msg.command == UAP.CommandEnum.GOODBYE:
+                    self.instance.Exit("GOODBYE from server")
+                if msg.command == UAP.CommandEnum.ALIVE:
+                    self.TimerStart()
+            except socket.timeout:
+                if waitingState:
+                    self.instance.Exit("Timeout from wait")
+                else:
+                    self.waitingState = True
 
 
     def Run(self):
@@ -75,12 +83,22 @@ class UAPClient(Client):
         self.SendPacket(helloMessage)
 
         # Wait for hello
+        self.instance.client_socket.settimeout(self.instance.timeout)
         while True: 
-            data, _ = self.instance.client_socket.recvfrom(1024)
-            msg = Message.DecodeMessage(data)
-            if msg.sID == self.sID and msg.command == UAP.CommandEnum.HELLO:
-                self.state = UAPClient.STATES["Ready"]
-                break
+            try:
+                data, _ = self.instance.client_socket.recvfrom(1024)
+                msg = Message.DecodeMessage(data)
+                if msg.sID == self.sID and msg.command == UAP.CommandEnum.HELLO:
+                    self.state = UAPClient.STATES["Ready"]
+                    break
+            except KeyboardInterrupt:
+                self.instance.Exit("Keyboard interrupt")
+            except socket.timeout:
+                self.Exit("Timeout")
+                quit()
+            except ConnectionRefusedError:
+                self.Exit("Connection refused")
+                quit()
         
         self.TimerStart()
         self.instance.Run()
@@ -114,7 +132,7 @@ if __name__ == "__main__":
     elif len(sys.argv) == 3: 
         client = UAPClient(ThreadedClient(sys.argv[1], int(sys.argv[2])))
     else:
-        client = UAPClient(ThreadedClient(sys.argv[1], int(sys.argv[2]), sys.argv[3]))
+        client = UAPClient(ThreadedClient(sys.argv[1], int(sys.argv[2]), int(sys.argv[3])))
 
     client.Run()
     

@@ -39,21 +39,19 @@ class UAPClient(Client):
                 UAP.CommandEnum.GOODBYE,
                 self.seq,
                 self.sID,
-                "EOF"
+                message
             ))
             self.Exit(message)
             while self.instance.running.is_set():
                 pass
             return
-        if message == "q":
-            return self.Exit("Quitting")
-        else:
-            message = Message(
-                UAP.CommandEnum.DATA, 
-                self.seq, 
-                self.sID, 
-                message
-            )
+        
+        message = Message(
+            UAP.CommandEnum.DATA, 
+            self.seq, 
+            self.sID, 
+            message
+        )
         self.SendPacket(message)
 
     def RecievePacket(self):
@@ -105,7 +103,6 @@ class UAPClient(Client):
 
     def Exit(self, reason):
         print("Closing. Reason:", reason)
-        # self.instance.Exit(reason)
         self.state = UAPClient.STATES["Closing"]
         message = Message(
                 UAP.CommandEnum.GOODBYE,

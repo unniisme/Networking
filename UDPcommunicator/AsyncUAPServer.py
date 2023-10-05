@@ -14,7 +14,7 @@ import time
 import asyncio
 import asyncudp
 
-SESSION_TIMEOUT = 20  # Adjust this value as needed
+SESSION_TIMEOUT = 30  # Adjust this value as needed
 
 SESSIONS = {}
 
@@ -95,93 +95,111 @@ async def session_handler(server_socket, session_id):
     # print("Replies sent")
     PrintMessage(reply_message, "Session Started")
 
-    while True:
-            # print('*')
+    try:
+        while True:
+                # print('*')
 
-            # Fetch session data from shared dictionary
-            session = SESSIONS[session_id]
+                # Fetch session data from shared dictionary
+                session = SESSIONS[session_id]
 
-            # Session timeout
-            if session.is_timedout():
-                session.close_session()
-                PrintMessage(Message(   
-                    0,
-                    session.expected_sequence_number,
-                    session_id,
-                    "Closing session due to timeout"
-                ))
-                quit()
-            
-            client_address = session.client_address
-            received_message = await session.messages.get()
-            #print(f"Received data from {client_address}: {received_message}")
+                client_address = session.client_address
+                try:
+                    received_message = await asyncio.wait_for(session.messages.get(), SESSION_TIMEOUT)
+                except:
+                    PrintMessage(Message(   
+                        0,
+                        session.expected_sequence_number,
+                        session_id,
+                        "Closing session due to timeout"
+                    ))
+                    session.close_session()
+                    
+                #print(f"Received data from {client_address}: {received_message}")
 
-            if received_message.sID != session_id:
-                raise RuntimeError("Recieved wrong session packet")
-            
-            if received_message.command == UAP.CommandEnum.HELLO:
-                raise RuntimeError("Recieved hello packet in thread")
+                if received_message.sID != session_id:
+                    raise RuntimeError("Recieved wrong session packet")
+                
+                if received_message.command == UAP.CommandEnum.HELLO:
+                    raise RuntimeError("Recieved hello packet in task")
 
-            elif received_message.command == UAP.CommandEnum.DATA:
+                elif received_message.command == UAP.CommandEnum.DATA:
 
-                # Update the session's last activity time
-                session.update_activity_time()
+                    # Update the session's last activity time
+                    session.update_activity_time()
 
-                session.process_packet(received_message)
-                # Send an ALIVE message in response to the DATA message
-                alive_message = Message(UAP.CommandEnum.ALIVE, 0, session_id, "ALIVE")
-                encoded_alive_message = alive_message.EncodeMessage()
-                server_socket.sendto(encoded_alive_message, client_address)
-            
-            elif received_message.command == UAP.CommandEnum.GOODBYE:
-                #print("\necievd goodbye\n")
+                    session.process_packet(received_message)
+                    # Send an ALIVE message in response to the DATA message
+                    alive_message = Message(UAP.CommandEnum.ALIVE, 0, session_id, "ALIVE")
+                    encoded_alive_message = alive_message.EncodeMessage()
+                    server_socket.sendto(encoded_alive_message, client_address)
+                
+                elif received_message.command == UAP.CommandEnum.GOODBYE:
+                    #print("\necievd goodbye\n")
 
-                PrintMessage(received_message, "Closing session")
-                session.close_session()
+                    PrintMessage(received_message, "Closing session")
+                    session.close_session()
+                    break
+    except asyncio.exceptions.CancelledError:
+        pass
 
 
 
 async def recieve_handler(server_socket):
-    print("Recieve Handler started")
-    while True:
-        data, client_address = await server_socket.recvfrom()
-        received_message = Message.DecodeMessage(data)
+    try:
+        while True:
+            data, client_address = await server_socket.recvfrom()
+            received_message = Message.DecodeMessage(data)
 
-        if received_message.command == UAP.CommandEnum.HELLO:
-            session_id = received_message.sID
-            
-            if session_id not in SESSIONS:
-                new_session = Session(session_id, client_address, server_socket, SESSIONS)  # Pass server_socket and active_sessions
-                if not new_session.is_hello(received_message):
-                    # Terminate the session if the initial message is not HELLO
+            if received_message.command == UAP.CommandEnum.HELLO:
+                session_id = received_message.sID
+                
+                if session_id not in SESSIONS:
+                    new_session = Session(session_id, client_address, server_socket, SESSIONS)  # Pass server_socket and active_sessions
+                    if not new_session.is_hello(received_message):
+                        # Terminate the session if the initial message is not HELLO
+                        continue
+                    SESSIONS[session_id] = new_session
+                else:
+                    SESSIONS[session_id].close_session()
                     continue
-                SESSIONS[session_id] = new_session
-            else:
-                SESSIONS[session_id].close_session()
-                continue
 
-            # Update the session's last activity time
-            SESSIONS[session_id].update_activity_time()
+                # Update the session's last activity time
+                SESSIONS[session_id].update_activity_time()
 
-            # Starting session task
-            session_task = asyncio.ensure_future(session_handler(server_socket, session_id))
-            SESSIONS[session_id].task = session_task
+                # Starting session task
+                session_task = asyncio.ensure_future(session_handler(server_socket, session_id))
+                SESSIONS[session_id].task = session_task
 
-        elif received_message.command == UAP.CommandEnum.DATA or received_message.command == UAP.CommandEnum.GOODBYE:
-            session_id = received_message.sID
-            if session_id not in SESSIONS:
-                # Terminate the session if the DATA message is received without a HELLO
-                continue
+            elif received_message.command == UAP.CommandEnum.DATA or received_message.command == UAP.CommandEnum.GOODBYE:
+                session_id = received_message.sID
+                if session_id not in SESSIONS:
+                    # Terminate the session if the DATA message is received without a HELLO
+                    continue
 
-            await SESSIONS[session_id].messages.put(received_message)
+                await SESSIONS[session_id].messages.put(received_message)
+    except KeyboardInterrupt:
+        print("recieve handler got keyboard interrupt")
+    except asyncio.exceptions.CancelledError:
+        pass
 
 
-async def input_handler():
-    print("Input Handler started")
-    while True:
-        stdin = await a_input()
-        if stdin == "q":
-            quit()
+async def input_handler(concurrent_task : asyncio.Task):
+    try:
+        while True:
+            # Wait for input and close server if input is q
+            stdin = await a_input()
+            if stdin.strip() == "q":
+                break
+    except KeyboardInterrupt:
+        print("Input handler got keyboard interrupt")
+    except asyncio.exceptions.CancelledError:
+        pass
+    finally:
+        # cancel the reciever task
+        concurrent_task.cancel()
+        # cancel the sessions tasks
+        send_goodbye_to_active_sessions(SESSIONS.copy())
+    
 
 
 def send_goodbye_to_inactive_sessions(active_sessions):
@@ -207,39 +225,34 @@ async def main(port, host='0.0.0.0'):
     server_address = (host, port)
     # server_socket.bind(server_address)
 
+    # Create asynchronous socket
     server_socket = await asyncudp.create_socket(local_addr=server_address)
     print(f"Waiting on host {host} and port {port}")
 
 
-    loop = asyncio.get_event_loop()
-    try:
-        input_task = asyncio.ensure_future(input_handler())
-        recieve_task = asyncio.ensure_future(recieve_handler(server_socket))
+    # Define each task
+    recieve_task = asyncio.ensure_future(recieve_handler(server_socket))
+    input_task = asyncio.ensure_future(input_handler(recieve_task))
 
-        _, pending = await asyncio.wait([input_task, recieve_task], return_when=asyncio.FIRST_COMPLETED)
+    # Await on all parallel tasks
+    _, pending = await asyncio.wait([input_task, recieve_task], return_when=asyncio.FIRST_COMPLETED)
 
-        for task in pending:
-            task.cancel()
+    # Cancel whichever tasks have not ended yet
+    for task in pending:
+        task.cancel()
 
-    except KeyboardInterrupt:
-        print("Server is quitting due to keyboard interrupt.")
-        quit()
-    except Exception as e:
-        print(e)
-    finally:
-        # Send GOODBYE message to all active sessions
-        send_goodbye_to_active_sessions(SESSIONS.copy())
-        # Close event loop
-        # loop.close()
-        # Close the socket and clean up
-        server_socket.close()
-        quit()
+    # Send GOODBYE message to all active sessions
+    send_goodbye_to_active_sessions(SESSIONS.copy())
+    # Close the socket and clean up
+    server_socket.close()
+    return
+        
 
 
 if __name__ == "__main__":
     import sys
     if len(sys.argv) == 1:
-        print("Usage: ThreadedUAPServer.py port [host]")
+        print("Usage: AsyncUAPServer.py port [host]")
     elif len(sys.argv) == 2:
         asyncio.run(main(int(sys.argv[1])))
     else:

@@ -3,15 +3,20 @@ import asyncio
 
 class AsyncServer(Server):
 
+    async def RecievePacket(self):
+        data, clientAddr = self.server_socket.recvfrom(1024)
+        while not data:
+            data, clientAddr = self.server_socket.recvfrom(1024)
+        return data, clientAddr
+
     async def AsyncStart(self):
         while True:
             # Get data using event loop
-            data = await self.loop.sock_recv(self.server_socket, 1024)
-            if not data:
-                continue
-            self.HandlePacket(data)
+            # client, _ = await self.loop.sock_accept(self.server_socket)
+            data, clientAddr = await self.RecievePacket()
+            self.HandlePacket(data, clientAddr)
 
-    def Start(self):
+    def Run(self):
         self.loop = asyncio.get_event_loop()
         try:
             # Run main function asynchronously
@@ -25,7 +30,7 @@ class AsyncClient(Client):
         while True:
             self.HandlePacket()
 
-    def Start(self):
+    def Run(self):
         try:
             # Run main function asynchronously
             asyncio.run(self.AsyncStart())

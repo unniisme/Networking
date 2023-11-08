@@ -14,7 +14,7 @@ import time
 import asyncio
 import asyncudp
 
-SESSION_TIMEOUT = 30  # Adjust this value as needed
+SESSION_TIMEOUT = 20  # Adjust this value as needed
 
 SESSIONS = {}
 
@@ -105,7 +105,7 @@ async def session_handler(server_socket, session_id):
                 client_address = session.client_address
                 try:
                     received_message = await asyncio.wait_for(session.messages.get(), SESSION_TIMEOUT)
-                except:
+                except asyncio.exceptions.TimeoutError:
                     PrintMessage(Message(   
                         0,
                         session.expected_sequence_number,
@@ -113,6 +113,9 @@ async def session_handler(server_socket, session_id):
                         "Closing session due to timeout"
                     ))
                     session.close_session()
+                except Exception as e:
+                    raise e
+                
                     
                 #print(f"Received data from {client_address}: {received_message}")
 
@@ -183,7 +186,7 @@ async def recieve_handler(server_socket):
         pass
 
 
-async def input_handler(concurrent_task : asyncio.Task):
+async def input_handler():
     try:
         while True:
             # Wait for input and close server if input is q
@@ -194,11 +197,6 @@ async def input_handler(concurrent_task : asyncio.Task):
         print("Input handler got keyboard interrupt")
     except asyncio.exceptions.CancelledError:
         pass
-    finally:
-        # cancel the reciever task
-        concurrent_task.cancel()
-        # cancel the sessions tasks
-        send_goodbye_to_active_sessions(SESSIONS.copy())
     
 
 
@@ -232,7 +230,7 @@ async def main(port, host='0.0.0.0'):
 
     # Define each task
     recieve_task = asyncio.ensure_future(recieve_handler(server_socket))
-    input_task = asyncio.ensure_future(input_handler(recieve_task))
+    input_task = asyncio.ensure_future(input_handler())
 
     # Await on all parallel tasks
     _, pending = await asyncio.wait([input_task, recieve_task], return_when=asyncio.FIRST_COMPLETED)
@@ -243,6 +241,7 @@ async def main(port, host='0.0.0.0'):
 
     # Send GOODBYE message to all active sessions
     send_goodbye_to_active_sessions(SESSIONS.copy())
+
     # Close the socket and clean up
     server_socket.close()
     return

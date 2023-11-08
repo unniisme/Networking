@@ -74,7 +74,7 @@ class Client:
 
     def SendPacket(self, message):
         # Override
-        self.client_socket.sendall(message.encode('utf-8'))
+        self.client_socket.sendall(message)
 
     def HandlePacket(self, message : str, isEOF : bool = False):
         # Override

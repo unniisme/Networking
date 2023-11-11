@@ -1,5 +1,4 @@
 import socket
-import select
 import threading
 import logging
 from ProxyHandler import Request, Response
@@ -26,7 +25,7 @@ class ProxyServer:
 
 
         request = Request(data)
-        print(f">> {request.Request()}")
+        print(f">> {request.Request().decode()}")
         logging.debug(f"request:\n{request}")
 
         server_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -90,6 +89,7 @@ class ProxyServer:
 
     def Start(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind((self.host, self.port))
         self.sock.listen()
         print(f"Listening at: http://{self.host}:{self.port}")
@@ -109,13 +109,12 @@ class ProxyServer:
             logging.info("Closing due to keyboard interrupt")
 
         finally:
-            print("Closing.....")
             self.Close()
+            print("Closing.....")
 
     def Close(self):
-        if self.client_conn: self.client_conn.close()
-        if self.server_conn: self.server_conn.close()
-        if self.sock: self.sock.close()
+        self.sock.close()
+        exit()
 
 if __name__ == "__main__":
 

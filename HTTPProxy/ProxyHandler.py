@@ -11,67 +11,74 @@ class Request:
     def __init__(self, raw: bytes):
         self.raw = raw
         self.raw_split = raw.split(b"\r\n")
-        self.request = self.raw_split[0]
-        self.log = self.request.decode()
+        self.log = self.raw_split[0].decode()
         self.body = self.raw[len(self.log):]
         logging.info(f"Request.raw = {self.raw}")
-        logging.info(f"Request.request = {self.request}")
         logging.info(f"Request.body = {self.body}")
 
-        self.method, path, self.version = self.log.split(" ")
-        self.path = path
+        ### Request details
+        self.method, self.path, self.version = self.log.split(" ")
 
-        host = None
+        # Lower HTTP version
+        self.version = "HTTP/1.0"
+
+        host = ""
         port = 80
+        header = "" 
 
-        # Check for Host header
-        raw_host = re.findall(rb"host:\s*(.*?)\r\n", raw.lower())
-        
-        # if the host header is found, extract and store the host and port information 
-        if raw_host:
-            raw_host = raw_host[0].decode()
-            host, port_str = raw_host.split(":") if ":" in raw_host else (raw_host, None)
+        for raw_line in self.raw_split[1:]:
+            line = raw_line.decode()
 
-        # Check for host in path
-        if (not host or not port) and "://" in path:
-            path_list = path.split("/")
-            if path_list[0] == "http:":
-                port = 80
-            elif path_list[0] == "https:":
-                port = 443
+            # Check for Host header
+            if "host" in line.lower():
+                raw_host = raw_line.split(b':', 1)[1].decode().strip()
 
-            host_n_port = path_list[2].split(":")
-            if len(host_n_port) == 1:
-                host = host_n_port[0]
-            elif len(host_n_port) == 2:
-                host, port_str = host_n_port
+                # if the host header is found, extract and store the host and port information 
+                if raw_host:
+                    host, port_str = raw_host.split(":") if ":" in raw_host else (raw_host, None)
 
-            path = f"/{'/'.join(path_list[3:])}"
+                # Check for host in path
+                if (not host or not port) and "://" in self.path:
+                    path_list = self.path.split("/")
+                    if path_list[0] == "http:":
+                        port = 80
+                    elif path_list[0] == "https:":
+                        port = 443
 
-        # Extract port from port_str
-        if port_str:
-            port = int(port_str)
+                    host_n_port = path_list[2].split(":")
+                    if len(host_n_port) == 1:
+                        host = host_n_port[0]
+                    elif len(host_n_port) == 2:
+                        host, port_str = host_n_port
+
+                    self.path = f"/{'/'.join(path_list[3:])}"
+
+                # Extract port from port_str
+                if port_str:
+                    port = int(port_str)
+
+            if "keep-alive" in line.lower():
+                line = self.OverrideKeepAlive(line)
+
+            header += line + "\r\n"
+
 
         self.host = host
         self.port = port
+
+        self.header = header.encode()
+        logging.info(f"Request.request = {self.Request()}")
+        logging.info(f"Request.header = {self.header}")
         logging.info(f"Request.host = \"{self.host}\", Request.port = {self.port}")
 
     def Header(self):
-        return self.body
+        return self.header
 
     def Request(self):
-        return self.request
-    
-    def GetGeaderDict(self):
-        raw_split = self.raw_split[1:]
-        _header = dict()
-        for line in raw_split:
-            if not line:
-                continue
-            broken_line = line.decode().split(":")
-            _header[broken_line[0].lower()] = ":".join(broken_line[1:])
-            
-        return _header
+        return f"{self.method} {self.path} {self.version}".encode()
+
+    def GetHeaderDict(self):
+        return self.headerDict
     
     def IsConnect(self):
         """
@@ -81,6 +88,11 @@ class Request:
 
     def __str__(self):
         return "\n".join([str(x) for x in self.raw_split])
+    
+
+    ## Request overrides
+    def OverrideKeepAlive(self, line : str) -> str:
+        return line.replace("keep-alive", "close")
 
 
 class Response:
@@ -89,3 +101,13 @@ class Response:
         502 : "HTTP/1.0 502 Bad Gateway\r\n\r\n".encode(),
         200 : "HTTP/1.0 200 OK\r\n\r\n".encode(),
     }
+
+
+### Test cases
+if __name__ == "__main__":
+
+    ## Test 1 
+    # Keep alive and proxy keep alive
+    in1 = b'CONNECT rum.browser-intake-datadoghq.com:443 HTTP/1.1\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0\r\nProxy-Connection: keep-alive\r\nConnection: keep-alive\r\nHost: rum.browser-intake-datadoghq.com:443\r\n\r\n'
+
+    

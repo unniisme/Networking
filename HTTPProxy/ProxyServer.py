@@ -5,8 +5,8 @@ import logging
 from ProxyHandler import Request, Response
 
 # Logging
-FORMAT = "[%(levelname)-8s][%(asctime)s][%(filename)s:%(lineno)s - %(funcName)13s() ] %(message)s"
-logging.basicConfig(format=FORMAT, filename='log/server.log', encoding='utf-8', level=logging.DEBUG)
+FORMAT = "[%(levelname)-8s][%(asctime)s][%(filename)s:%(lineno)s - %(funcName)13s()] %(message)s"
+logging.basicConfig(format=FORMAT, filename='log/server.log', encoding='utf-8', level=logging.INFO)
 
 MAX_CHUNK_SIZE = 16*2048
 
@@ -19,7 +19,7 @@ class ProxyServer:
         self.client_conn = None
         self.server_conn = None
 
-    def HandleConnection(self, client_conn):
+    def MainThread(self, client_conn):
         data = b''
         while not (data[-4:] == b"\r\n\r\n" or data[-3:-1] == b"\n\r\n"):
             data += client_conn.recv(MAX_CHUNK_SIZE)
@@ -27,40 +27,30 @@ class ProxyServer:
 
         request = Request(data)
         print(f">> {request.Request()}")
-        logging.debug(request)
+        logging.debug(f"request:\n{request}")
 
         server_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             server_conn.connect((request.host, request.port))
         except Exception as e:
             server_conn.send(Response.StatusCodes[502])
-            raise e
+            logging.error(f"Couldn't connect to {request.host}:{request.port}\
+                          Exiting with exception : {e}")
+            client_conn.close()
+            return
 
         if request.IsConnect():
             client_conn.send(Response.StatusCodes[200]) # Fake connection established
-            
 
-            while True:
-                triple = select.select([client_conn, server_conn], [], [], 60)[0]
-                if not len(triple):
-                    logging.warn("Select empty")
-                    break
-                try:
-                    if client_conn in triple:
-                        data = client_conn.recv(MAX_CHUNK_SIZE)
-                        if not data:
-                            break
-                        logging.debug(f"[client to server] {data}")
-                        server_conn.send(data)
-                    if server_conn in triple:
-                        data = server_conn.recv(MAX_CHUNK_SIZE)
-                        if not data:
-                            break
-                        logging.debug(f"[server to client] {data}")
-                except ConnectionAbortedError as e:
-                    logging.error(f"Connection Aborted : {e}")
-                    break
+            sendThread = threading.Thread(target=self.ConnectionThread, args=(client_conn, server_conn))            
+            recieveThread = threading.Thread(target=self.ConnectionThread, args=(server_conn, client_conn))
+            sendThread.daemon = True
+            recieveThread.daemon = True
+            logging.info(f"Staring sendThread {sendThread}")
+            sendThread.start()
 
+            logging.info(f"Staring recieveThread {sendThread}")
+            recieveThread.start()            
 
         else:
             server_conn.send(request.Request())
@@ -72,14 +62,31 @@ class ProxyServer:
                 server_conn.send(data)
                 data = client_conn.recv(256)
 
-        data = server_conn.recv(256)
-        while data:
-            logging.debug(f"[server to client] {data}")
-            client_conn.send(data)
             data = server_conn.recv(256)
+            while data:
+                logging.debug(f"[server to client] {data}")
+                client_conn.send(data)
+                data = server_conn.recv(256)
 
-        server_conn.close()
-        client_conn.close()
+            server_conn.close()
+            client_conn.close()
+
+    def ConnectionThread(self, source_conn : socket.socket, dest_conn : socket.socket):
+
+        logging.info(f"[{threading.get_ident()}] Starting thread")        
+        
+        while True:
+            try:
+                data = source_conn.recv(256)
+                if not data:
+                    break
+                logging.debug(f"[{threading.get_ident()}] {data}")
+                dest_conn.send(data)
+            except ConnectionAbortedError:
+                break
+
+        logging.info(f"[{threading.get_ident()}] Closing thread")
+                
 
     def Start(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -93,7 +100,7 @@ class ProxyServer:
                 self.client_conn, client_addr = self.sock.accept()
                 logging.info(f"Accepted connection from {client_addr}")
 
-                connectionThread = threading.Thread(target=self.HandleConnection, args=(self.client_conn,))
+                connectionThread = threading.Thread(target=self.MainThread, args=(self.client_conn,))
                 connectionThread.daemon = True
                 connectionThread.start()
                 

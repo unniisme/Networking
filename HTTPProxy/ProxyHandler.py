@@ -14,9 +14,9 @@ class Request:
         self.request = self.raw_split[0]
         self.log = self.request.decode()
         self.body = self.raw[len(self.log):]
-        logging.debug(f"Request.raw = {self.raw}")
-        logging.debug(f"Request.request = {self.request}")
-        logging.debug(f"Request.body = {self.body}")
+        logging.info(f"Request.raw = {self.raw}")
+        logging.info(f"Request.request = {self.request}")
+        logging.info(f"Request.body = {self.body}")
 
         self.method, path, self.version = self.log.split(" ")
         self.path = path
@@ -54,13 +54,13 @@ class Request:
 
         self.host = host
         self.port = port
-        logging.info(f"request.host = \"{self.host}\", request.port = {self.port}")
+        logging.info(f"Request.host = \"{self.host}\", Request.port = {self.port}")
 
     def Header(self):
         return self.body
 
     def Request(self):
-        return self.log
+        return self.request
     
     def GetGeaderDict(self):
         raw_split = self.raw_split[1:]

@@ -1,11 +1,12 @@
 import socket
 import select
+import threading
 import logging
-from ProxyHandler import Request    
+from ProxyHandler import Request, Response
 
 # Logging
 FORMAT = "[%(levelname)-8s][%(asctime)s][%(filename)s:%(lineno)s - %(funcName)13s() ] %(message)s"
-logging.basicConfig(format=FORMAT, filename='log/server.log', encoding='utf-8', level=logging.INFO)
+logging.basicConfig(format=FORMAT, filename='log/server.log', encoding='utf-8', level=logging.DEBUG)
 
 MAX_CHUNK_SIZE = 16*2048
 
@@ -18,6 +19,68 @@ class ProxyServer:
         self.client_conn = None
         self.server_conn = None
 
+    def HandleConnection(self, client_conn):
+        data = b''
+        while not (data[-4:] == b"\r\n\r\n" or data[-3:-1] == b"\n\r\n"):
+            data += client_conn.recv(MAX_CHUNK_SIZE)
+
+
+        request = Request(data)
+        print(f">> {request.Request()}")
+        logging.debug(request)
+
+        server_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            server_conn.connect((request.host, request.port))
+        except Exception as e:
+            server_conn.send(Response.StatusCodes[502])
+            raise e
+
+        if request.IsConnect():
+            client_conn.send(Response.StatusCodes[200]) # Fake connection established
+            
+
+            while True:
+                triple = select.select([client_conn, server_conn], [], [], 60)[0]
+                if not len(triple):
+                    logging.warn("Select empty")
+                    break
+                try:
+                    if client_conn in triple:
+                        data = client_conn.recv(MAX_CHUNK_SIZE)
+                        if not data:
+                            break
+                        logging.debug(f"[client to server] {data}")
+                        server_conn.send(data)
+                    if server_conn in triple:
+                        data = server_conn.recv(MAX_CHUNK_SIZE)
+                        if not data:
+                            break
+                        logging.debug(f"[server to client] {data}")
+                except ConnectionAbortedError as e:
+                    logging.error(f"Connection Aborted : {e}")
+                    break
+
+
+        else:
+            server_conn.send(request.Request())
+            server_conn.send(request.Header())
+
+            data = client_conn.recv(256)
+            while data:
+                logging.debug(f"[client to server] {data}")
+                server_conn.send(data)
+                data = client_conn.recv(256)
+
+        data = server_conn.recv(256)
+        while data:
+            logging.debug(f"[server to client] {data}")
+            client_conn.send(data)
+            data = server_conn.recv(256)
+
+        server_conn.close()
+        client_conn.close()
+
     def Start(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.bind((self.host, self.port))
@@ -29,54 +92,17 @@ class ProxyServer:
             while True:
                 self.client_conn, client_addr = self.sock.accept()
                 logging.info(f"Accepted connection from {client_addr}")
+
+                connectionThread = threading.Thread(target=self.HandleConnection, args=(self.client_conn,))
+                connectionThread.daemon = True
+                connectionThread.start()
                 
-                try:
-                    data = b''
-                    while not data:
-                        data = self.client_conn.recv(MAX_CHUNK_SIZE)
-
-
-                    request = Request(data)
-                    print(request)
-                    logging.debug(request)
-
-                    self.server_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-                    logging.info(f"Server : {request.host, request.port}")
-                    self.server_conn.connect((request.host, request.port))
-
-                    self.client_conn.send(b"HTTP/1.1 200 Connection Established\r\n\r\n") # Fake connection established
-                    self.server_conn.send(data)
-
-                    while True:
-                        triple = select.select([self.client_conn, self.server_conn], [], [], 60)[0]
-                        if not len(triple):
-                            logging.warn("Select empty")
-                            break
-                        try:
-                            if self.client_conn in triple:
-                                data = self.client_conn.recv(MAX_CHUNK_SIZE)
-                                if not data:
-                                    break
-                                print("[Client to Server]\n", Request(data))
-                                self.server_conn.send(data)
-                            if self.server_conn in triple:
-                                data = self.server_conn.recv(MAX_CHUNK_SIZE)
-                                if not data:
-                                    break
-                                print("[Server to Client]\n", Request(data))
-                                self.client_conn.send(data)     
-                        except ConnectionAbortedError as e:
-                            logging.error(f"Connection Aborted : {e}")
-                            break
-
-                except Exception as e:
-                    logging.error(f"Error : {e}")
-                    continue
 
         except KeyboardInterrupt:
-            print("Closing.....")
             logging.info("Closing due to keyboard interrupt")
+
+        finally:
+            print("Closing.....")
             self.Close()
 
     def Close(self):

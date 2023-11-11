@@ -1,19 +1,31 @@
 import re
+import logging
 
 class Request:
+
+    class Methods:
+        CONNECT = "CONNECT"
+        GET = "GET"
+        POST = "POST"
+
     def __init__(self, raw: bytes):
         self.raw = raw
         self.raw_split = raw.split(b"\r\n")
-        self.log = self.raw_split[0].decode()
+        self.request = self.raw_split[0]
+        self.log = self.request.decode()
+        self.body = self.raw[len(self.log):]
+        logging.debug(f"Request.raw = {self.raw}")
+        logging.debug(f"Request.request = {self.request}")
+        logging.debug(f"Request.body = {self.body}")
 
-        _, path, _ = self.log.split(" ")
+        self.method, path, self.version = self.log.split(" ")
         self.path = path
 
         host = None
-        port = None
+        port = 80
 
         # Check for Host header
-        raw_host = re.findall(rb"host: (.*?)\r\n", raw.lower())
+        raw_host = re.findall(rb"host:\s*(.*?)\r\n", raw.lower())
         
         # if the host header is found, extract and store the host and port information 
         if raw_host:
@@ -21,7 +33,7 @@ class Request:
             host, port_str = raw_host.split(":") if ":" in raw_host else (raw_host, None)
 
         # Check for host in path
-        if not host and "://" in path:
+        if (not host or not port) and "://" in path:
             path_list = path.split("/")
             if path_list[0] == "http:":
                 port = 80
@@ -42,8 +54,15 @@ class Request:
 
         self.host = host
         self.port = port
+        logging.info(f"request.host = \"{self.host}\", request.port = {self.port}")
+
+    def Header(self):
+        return self.body
+
+    def Request(self):
+        return self.log
     
-    def header(self):
+    def GetGeaderDict(self):
         raw_split = self.raw_split[1:]
         _header = dict()
         for line in raw_split:
@@ -53,6 +72,20 @@ class Request:
             _header[broken_line[0].lower()] = ":".join(broken_line[1:])
             
         return _header
+    
+    def IsConnect(self):
+        """
+        Checks if this request is a CONNECT request
+        """
+        return self.method == Request.Methods.CONNECT
 
     def __str__(self):
-        return "\n".join([x.decode("utf-8") for x in self.raw_split])
+        return "\n".join([str(x) for x in self.raw_split])
+
+
+class Response:
+
+    StatusCodes = {
+        502 : "HTTP/1.0 502 Bad Gateway\r\n\r\n".encode(),
+        200 : "HTTP/1.0 200 OK\r\n\r\n".encode(),
+    }

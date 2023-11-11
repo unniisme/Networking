@@ -103,11 +103,4 @@ class Response:
     }
 
 
-### Test cases
-if __name__ == "__main__":
-
-    ## Test 1 
-    # Keep alive and proxy keep alive
-    in1 = b'CONNECT rum.browser-intake-datadoghq.com:443 HTTP/1.1\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0\r\nProxy-Connection: keep-alive\r\nConnection: keep-alive\r\nHost: rum.browser-intake-datadoghq.com:443\r\n\r\n'
-
     

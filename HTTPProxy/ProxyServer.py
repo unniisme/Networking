@@ -11,7 +11,7 @@ MAX_CHUNK_SIZE = 16*2048
 
 class ProxyServer:
 
-    def __init__(self, host : str = "localhost", port : int = 8800):
+    def __init__(self, host : str, port : int):
         self.host = host
         self.port = port
 
@@ -19,15 +19,17 @@ class ProxyServer:
         self.server_conn = None
 
     def MainThread(self, client_conn):
+        # Recieve outgoing data from browser
         data = b''
         while not (data[-4:] == b"\r\n\r\n" or data[-3:-1] == b"\n\r\n"):
             data += client_conn.recv(MAX_CHUNK_SIZE)
 
-
+        # Process the data
         request = Request(data)
         print(f">> {request.Request().decode()}")
         logging.debug(f"request:\n{request}")
 
+        # Try to connect to the requested server
         server_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             server_conn.connect((request.host, request.port))
@@ -38,9 +40,12 @@ class ProxyServer:
             client_conn.close()
             return
 
+        # If request is of type CONNECT
         if request.IsConnect():
+            # Send response code
             client_conn.send(Response.StatusCodes[200]) # Fake connection established
 
+            # Start threads to usher TCP connection between browser and server
             sendThread = threading.Thread(target=self.ConnectionThread, args=(client_conn, server_conn))            
             recieveThread = threading.Thread(target=self.ConnectionThread, args=(server_conn, client_conn))
             sendThread.daemon = True
@@ -51,16 +56,19 @@ class ProxyServer:
             logging.info(f"Staring recieveThread {sendThread}")
             recieveThread.start()            
 
+        # If request if GET
         else:
             server_conn.send(request.Request())
             server_conn.send(request.Header())
 
+            # Send data to server
             data = client_conn.recv(256)
             while data:
                 logging.debug(f"[client to server] {data}")
                 server_conn.send(data)
                 data = client_conn.recv(256)
 
+            # Recieve data from server
             data = server_conn.recv(256)
             while data:
                 logging.debug(f"[server to client] {data}")
@@ -71,6 +79,7 @@ class ProxyServer:
             client_conn.close()
 
     def ConnectionThread(self, source_conn : socket.socket, dest_conn : socket.socket):
+        # Thread that simply channels connection between any 2 sockets
 
         logging.info(f"[{threading.get_ident()}] Starting thread")        
         
@@ -88,18 +97,21 @@ class ProxyServer:
                 
 
     def Start(self):
+        # Start proxy socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind((self.host, self.port))
         self.sock.listen()
-        print(f"Listening at: http://{self.host}:{self.port}")
-        logging.info(f"Listening at: http://{self.host}:{self.port}")
+        print(f"Proxy listening at: http://{self.host}:{self.port}")
+        logging.info(f"Proxy listening at: http://{self.host}:{self.port}")
 
         try:
             while True:
+                # Accept each connection from browser each 
                 self.client_conn, client_addr = self.sock.accept()
                 logging.info(f"Accepted connection from {client_addr}")
 
+                # Start a thread for each connection
                 connectionThread = threading.Thread(target=self.MainThread, args=(self.client_conn,))
                 connectionThread.daemon = True
                 connectionThread.start()
@@ -117,6 +129,24 @@ class ProxyServer:
         exit()
 
 if __name__ == "__main__":
+    from sys import argv
 
-    server = ProxyServer()
+
+
+    if len(argv) == 1:
+        host = 'localhost'
+        port = 8800
+    elif len(argv) == 2:
+        host = 'localhost'
+        port = int(argv[1])
+    elif len(argv) == 3:
+        host = argv[1]
+        port = int(argv[2])
+    else:
+        if len(argv) > 3:
+            print("Usage: \n\tProxyServer.py\n\tProxyServer.py [port]\n\tProxyServer.py [host] [port]")
+        exit()
+            
+
+    server = ProxyServer(host, port)
     server.Start()

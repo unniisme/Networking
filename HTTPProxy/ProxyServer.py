@@ -5,7 +5,7 @@ from ProxyHandler import Request, Response
 
 # Logging
 FORMAT = "[%(levelname)-8s][%(asctime)s][%(filename)s:%(lineno)s - %(funcName)13s()] %(message)s"
-logging.basicConfig(format=FORMAT, filename='log/server.log', encoding='utf-8', level=logging.INFO)
+logging.basicConfig(format=FORMAT, filename='log/server.log', encoding='utf-8', level=logging.DEBUG)
 
 MAX_CHUNK_SIZE = 16*2048
 
@@ -58,22 +58,26 @@ class ProxyServer:
 
         # If request if GET
         else:
-            server_conn.send(request.Request())
-            server_conn.send(request.Header())
+            try:
+                server_conn.send(request.Request())
+                server_conn.send(request.Header())
 
-            # Send data to server
-            data = client_conn.recv(256)
-            while data:
-                logging.debug(f"[client to server] {data}")
-                server_conn.send(data)
+                # Send data to server
                 data = client_conn.recv(256)
+                while data:
+                    logging.debug(f"[client to server] {data}")
+                    server_conn.send(data)
+                    data = client_conn.recv(256)
 
-            # Recieve data from server
-            data = server_conn.recv(256)
-            while data:
-                logging.debug(f"[server to client] {data}")
-                client_conn.send(data)
+                # Recieve data from server
                 data = server_conn.recv(256)
+                while data:
+                    logging.debug(f"[server to client] {data}")
+                    client_conn.send(data)
+                    data = server_conn.recv(256)
+
+            except Exception as e:
+                logging.error(f"Error in main thread : {e}")
 
             server_conn.close()
             client_conn.close()

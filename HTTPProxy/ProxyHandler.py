@@ -37,7 +37,7 @@ class Request:
                 # if the host header is found, extract and store the host and port information 
                 if raw_host:
                     host, port_str = raw_host.split(":") if ":" in raw_host else (raw_host, None)
-                    port = int(port_str)
+                    if port_str: port = int(port_str)
 
             if "keep-alive" in line.lower():
                 line = self.OverrideKeepAlive(line)
@@ -58,7 +58,7 @@ class Request:
             elif len(host_n_port) == 2:
                 host, port_str = host_n_port
 
-            self.path = f"/{'/'.join(path_list[3:])}"
+            # self.path = f"/{'/'.join(path_list[3:])}"
 
             # Extract port from port_str
             if port_str:

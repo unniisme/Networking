@@ -7,8 +7,6 @@ from ProxyHandler import Request, Response
 FORMAT = "[%(levelname)-8s][%(asctime)s][%(filename)s:%(lineno)s - %(funcName)13s()] %(message)s"
 logging.basicConfig(format=FORMAT, filename='log/server.log', encoding='utf-8', level=logging.DEBUG)
 
-MAX_CHUNK_SIZE = 16*2048
-
 class ProxyServer:
 
     def __init__(self, host : str, port : int):
@@ -22,7 +20,7 @@ class ProxyServer:
         # Recieve outgoing data from browser
         data = b''
         while not (data[-4:] == b"\r\n\r\n" or data[-3:-1] == b"\n\r\n"):
-            data += client_conn.recv(MAX_CHUNK_SIZE)
+            data += client_conn.recv(1)
 
         # Process the data
         request = Request(data)
@@ -58,26 +56,43 @@ class ProxyServer:
 
         # If request if GET
         else:
-            try:
-                server_conn.send(request.Request())
-                server_conn.send(request.Header())
+            # try:
+            logging.debug("sending request")
+            server_conn.send(request.Request() + b'\r\n' + request.Header())
 
-                # Send data to server
-                data = client_conn.recv(256)
-                while data:
-                    logging.debug(f"[client to server] {data}")
-                    server_conn.send(data)
-                    data = client_conn.recv(256)
+            # # Send data to server
+            # logging.debug("sending data")
+            # data = client_conn.recv(256)
+            # while data:
+            #     logging.debug(f"[client to server] {data}")
+            #     server_conn.send(data)
+            #     data = client_conn.recv(256)
 
-                # Recieve data from server
+            # Recieve header from server
+            logging.debug("recieving header")
+            header = ""
+            line = ""
+            while True:
+                if header[-4:] == "\r\n\r\n" or header[-3:-1] == "\n\r\n":
+                    break
+                line += server_conn.recv(1).decode()
+                if line[-1:] == "\n":
+                    if "keep-alive" in line.lower():
+                        line = line.replace("keep-alive", "close")
+                    header += line
+                    line = ""
+            client_conn.send(header.encode())
+            # client_conn.send(header)
+
+            # Recieve data from server
+            data = server_conn.recv(256)
+            while data:
+                logging.debug(f"[server to client] {data}")
+                client_conn.send(data)
                 data = server_conn.recv(256)
-                while data:
-                    logging.debug(f"[server to client] {data}")
-                    client_conn.send(data)
-                    data = server_conn.recv(256)
 
-            except Exception as e:
-                logging.error(f"Error in main thread : {e}")
+            # except Exception as e:
+            #     logging.error(f"Error in main thread : {e}")
 
             server_conn.close()
             client_conn.close()
@@ -118,6 +133,8 @@ class ProxyServer:
                 # Accept each connection from browser each 
                 self.client_conn, client_addr = self.sock.accept()
                 logging.info(f"Accepted connection from {client_addr}")
+
+                # self.client_conn.setblocking(0)
 
                 # Start a thread for each connection
                 connectionThread = threading.Thread(target=self.MainThread, args=(self.client_conn,))

@@ -82,16 +82,20 @@ class ProxyServer:
         # Thread that simply channels connection between any 2 sockets
 
         logging.info(f"[{threading.get_ident()}] Starting thread")        
-        
-        while True:
-            try:
-                data = source_conn.recv(256)
-                if not data:
+
+        try:
+            while True:
+                try:
+                    data = source_conn.recv(256)
+                    if not data:
+                        break
+                    logging.debug(f"[{threading.get_ident()}] {data}")
+                    dest_conn.send(data)
+                except ConnectionAbortedError:
                     break
-                logging.debug(f"[{threading.get_ident()}] {data}")
-                dest_conn.send(data)
-            except ConnectionAbortedError:
-                break
+        except Exception as e:
+            logging.error(f"[{threading.get_ident()}] Closing with error : {e}")
+            return
 
         logging.info(f"[{threading.get_ident()}] Closing thread")
                 

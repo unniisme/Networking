@@ -19,11 +19,12 @@ class Request:
         ### Request details
         self.method, self.path, self.version = self.log.split(" ")
 
-        # Lower HTTP version
+        #Change into a Lower HTTP version
+        #because higher HTTP versions tend to tends to maintain more persistent connections
         self.version = "HTTP/1.0"
 
         host = ""
-        port = 80
+        port = 0
         header = "" 
 
         for raw_line in self.raw_split[1:]:
@@ -36,31 +37,33 @@ class Request:
                 # if the host header is found, extract and store the host and port information 
                 if raw_host:
                     host, port_str = raw_host.split(":") if ":" in raw_host else (raw_host, None)
-
-                # Check for host in path
-                if (not host or not port) and "://" in self.path:
-                    path_list = self.path.split("/")
-                    if path_list[0] == "http:":
-                        port = 80
-                    elif path_list[0] == "https:":
-                        port = 443
-
-                    host_n_port = path_list[2].split(":")
-                    if len(host_n_port) == 1:
-                        host = host_n_port[0]
-                    elif len(host_n_port) == 2:
-                        host, port_str = host_n_port
-
-                    self.path = f"/{'/'.join(path_list[3:])}"
-
-                # Extract port from port_str
-                if port_str:
                     port = int(port_str)
 
             if "keep-alive" in line.lower():
                 line = self.OverrideKeepAlive(line)
 
             header += line + "\r\n"
+            
+        # Check for host in path if we didnt find the host and port from host:
+        if (not host or not port) and "://" in self.path:
+            path_list = self.path.split("/")
+            if path_list[0] == "http:":
+                port = 80
+            elif path_list[0] == "https:":
+                port = 443
+
+            host_n_port = path_list[2].split(":")
+            if len(host_n_port) == 1:
+                host = host_n_port[0]
+            elif len(host_n_port) == 2:
+                host, port_str = host_n_port
+
+            self.path = f"/{'/'.join(path_list[3:])}"
+
+            # Extract port from port_str
+            if port_str:
+                port = int(port_str)
+
 
 
         self.host = host
@@ -76,9 +79,6 @@ class Request:
 
     def Request(self):
         return f"{self.method} {self.path} {self.version}".encode()
-
-    def GetHeaderDict(self):
-        return self.headerDict
     
     def IsConnect(self):
         """
@@ -88,7 +88,6 @@ class Request:
 
     def __str__(self):
         return "\n".join([str(x) for x in self.raw_split])
-    
 
     ## Request overrides
     def OverrideKeepAlive(self, line : str) -> str:
